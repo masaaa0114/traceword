@@ -1,0 +1,196 @@
+# .github/workflows/daily_automation.yml
+#
+# GitHub Actions で自動実行する設定
+# Mac/PC を起動しておく必要がない
+#
+# セットアップ手順:
+# 1. GitHub リポジトリの Settings > Secrets > Actions に以下を追加:
+#    - ANTHROPIC_API_KEY
+#    - NOTION_API_KEY
+#    - NOTION_DAILY_LOG_DB_ID
+#    - NOTION_WEEKLY_REPORT_DB_ID
+#    - NOTION_TASK_DB_ID
+#    - NOTION_DECISION_LOG_DB_ID
+#    - NOTION_KPI_PAGE_ID
+#    - GITHUB_REPO（自分のリポジトリ名）
+#
+# 2. このファイルを .github/workflows/ に配置してコミット
+
+name: TraceWords Daily Automation
+
+on:
+  schedule:
+    # UTC 時間（JST = UTC+9）
+    # 毎朝 8:00 JST = 前日 23:00 UTC
+    - cron: '0 23 * * *'
+
+    # 毎朝 8:30 JST = 前日 23:30 UTC
+    - cron: '30 23 * * *'
+
+    # 毎日 20:00 JST = 当日 11:00 UTC
+    - cron: '0 11 * * *'
+
+    # 毎週月曜 9:00 JST = 日曜 00:00 UTC
+    - cron: '0 0 * * 1'
+
+    # 毎週金曜 17:00 JST = 金曜 08:00 UTC
+    - cron: '0 8 * * 5'
+
+    # 毎週日曜 22:00 JST = 日曜 13:00 UTC
+    - cron: '0 13 * * 0'
+
+  # 手動実行（デバッグ用）
+  workflow_dispatch:
+    inputs:
+      job_name:
+        description: '実行するジョブ名（job01, job02, ..., all_daily）'
+        required: true
+        default: 'all_daily'
+
+jobs:
+
+  # ============================================
+  # 日次: 情報収集 + 朝会アジェンダ（8:00 JST）
+  # ============================================
+  daily_morning:
+    runs-on: ubuntu-latest
+    # 23:00 UTC のトリガー時のみ実行
+    if: github.event.schedule == '0 23 * * *' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        working-directory: automation
+        run: pip install -r requirements.txt
+
+      - name: Run JOB-01 情報収集
+        working-directory: automation
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          NOTION_DAILY_LOG_DB_ID: ${{ secrets.NOTION_DAILY_LOG_DB_ID }}
+          NOTION_TASK_DB_ID: ${{ secrets.NOTION_TASK_DB_ID }}
+          NOTION_DECISION_LOG_DB_ID: ${{ secrets.NOTION_DECISION_LOG_DB_ID }}
+          TIMEZONE: Asia/Tokyo
+        run: python run_job.py job01
+
+      - name: Run JOB-02 朝会アジェンダ
+        working-directory: automation
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          NOTION_DAILY_LOG_DB_ID: ${{ secrets.NOTION_DAILY_LOG_DB_ID }}
+          NOTION_TASK_DB_ID: ${{ secrets.NOTION_TASK_DB_ID }}
+          NOTION_DECISION_LOG_DB_ID: ${{ secrets.NOTION_DECISION_LOG_DB_ID }}
+          TIMEZONE: Asia/Tokyo
+        run: python run_job.py job02
+
+  # ============================================
+  # 日次: KPIアラート（20:00 JST）
+  # ============================================
+  daily_evening:
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 11 * * *'
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+        working-directory: automation
+      - name: Run JOB-06 KPIアラート
+        working-directory: automation
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          NOTION_DAILY_LOG_DB_ID: ${{ secrets.NOTION_DAILY_LOG_DB_ID }}
+          NOTION_TASK_DB_ID: ${{ secrets.NOTION_TASK_DB_ID }}
+          TIMEZONE: Asia/Tokyo
+        run: python run_job.py job06
+
+  # ============================================
+  # 週次: SNSコンテンツ（月曜 9:00 JST）
+  # ============================================
+  weekly_monday:
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 0 * * 1'
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+        working-directory: automation
+      - name: Run JOB-04 SNSコンテンツ
+        working-directory: automation
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          NOTION_DAILY_LOG_DB_ID: ${{ secrets.NOTION_DAILY_LOG_DB_ID }}
+          TIMEZONE: Asia/Tokyo
+        run: python run_job.py job04
+
+  # ============================================
+  # 週次: 週報（金曜 17:00 JST）
+  # ============================================
+  weekly_friday:
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 8 * * 5'
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+        working-directory: automation
+      - name: Run JOB-03 週報生成
+        working-directory: automation
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          NOTION_WEEKLY_REPORT_DB_ID: ${{ secrets.NOTION_WEEKLY_REPORT_DB_ID }}
+          NOTION_DAILY_LOG_DB_ID: ${{ secrets.NOTION_DAILY_LOG_DB_ID }}
+          NOTION_TASK_DB_ID: ${{ secrets.NOTION_TASK_DB_ID }}
+          NOTION_DECISION_LOG_DB_ID: ${{ secrets.NOTION_DECISION_LOG_DB_ID }}
+          TIMEZONE: Asia/Tokyo
+        run: python run_job.py job03
+
+  # ============================================
+  # 週次: コードレビュー（日曜 22:00 JST）
+  # ============================================
+  weekly_sunday:
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 13 * * 0'
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+        working-directory: automation
+      - name: Run JOB-05 コードレビュー
+        working-directory: automation
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_REPO: ${{ secrets.GITHUB_REPO }}
+          NOTION_DAILY_LOG_DB_ID: ${{ secrets.NOTION_DAILY_LOG_DB_ID }}
+          TIMEZONE: Asia/Tokyo
+        run: python run_job.py job05

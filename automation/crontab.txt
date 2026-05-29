@@ -1,0 +1,61 @@
+# TraceWords 自動化ジョブ — crontab 設定
+#
+# 設定方法：
+#   crontab -e
+#   このファイルの内容を貼り付ける
+#
+# 書式：分 時 日 月 曜日 コマンド
+# 曜日：0=日, 1=月, 2=火, 3=水, 4=木, 5=金, 6=土
+#
+# 事前準備：
+#   cd /path/to/automation
+#   pip install -r requirements.txt
+#   cp .env.example .env  # API キーを記入
+
+# Python のパスを確認してから設定
+# which python3  → /usr/bin/python3 など
+
+PYTHON=/usr/bin/python3
+WORKDIR=/path/to/your/automation  # ← 実際のパスに変更
+
+# ============================================
+# 日次ジョブ（毎日）
+# ============================================
+
+# JOB-01: 競合・業界情報収集（毎朝 8:00）
+0 8 * * * cd $WORKDIR && $PYTHON run_job.py job01 >> logs/job01.log 2>&1
+
+# JOB-02: 朝会アジェンダ生成（毎朝 8:30）
+30 8 * * * cd $WORKDIR && $PYTHON run_job.py job02 >> logs/job02.log 2>&1
+
+# JOB-06: KPIアラート監視（毎日 20:00）
+0 20 * * * cd $WORKDIR && $PYTHON run_job.py job06 >> logs/job06.log 2>&1
+
+# ============================================
+# 週次ジョブ
+# ============================================
+
+# JOB-03: 週報生成（毎週金曜 17:00）
+0 17 * * 5 cd $WORKDIR && $PYTHON run_job.py job03 >> logs/job03.log 2>&1
+
+# JOB-04: SNSコンテンツ案生成（毎週月曜 9:00）
+0 9 * * 1 cd $WORKDIR && $PYTHON run_job.py job04 >> logs/job04.log 2>&1
+
+# JOB-05: コードレビュー（毎週日曜 22:00）
+0 22 * * 0 cd $WORKDIR && $PYTHON run_job.py job05 >> logs/job05.log 2>&1
+
+# ============================================
+# 月次ジョブ
+# ============================================
+
+# JOB-07: 月次レポート（毎月最終日 21:00）
+# 注意：月の最終日を正確に指定するのが難しいため、
+# 28日・29日・30日・31日の21時に実行し、
+# スクリプト内で実際に月末かどうか判定
+0 21 28-31 * * cd $WORKDIR && $PYTHON -c "
+from datetime import datetime, timedelta
+import subprocess
+tomorrow = datetime.now() + timedelta(days=1)
+if tomorrow.month != datetime.now().month:
+    subprocess.run(['$PYTHON', 'run_job.py', 'job07'])
+" >> logs/job07.log 2>&1
